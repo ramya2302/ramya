@@ -1,61 +1,40 @@
+#!/usr/bin/python
+from time import sleep
+from flask import Flask
+from waitress import serve
+import os.path
+import subprocess
 
-FROM alpine:3.10
+app = Flask(__name__)
 
-ARG JMETER_VERSION="5.1.1"
-ENV JMETER_HOME /opt/apache-jmeter-${JMETER_VERSION}
-ENV	JMETER_BIN	${JMETER_HOME}/bin
-ENV	JMETER_DOWNLOAD_URL  https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${JMETER_VERSION}.tgz
-ENV PYTHONUNBUFFERED=1
+jmx_file_directory="/docker-jmeter/"
+jmx_reports_path="/docker-jmeter/tests/results/*"
+volume_mount_directory="/tmp/jmeter-report"
 
-# Install extra packages
-# Change TimeZone TODO: TZ still is not set!
-ARG TZ="Europe/Amsterdam"
-RUN apk update \
-	&& apk upgrade \
-	&& apk add ca-certificates \
-	&& update-ca-certificates \
-	&& apk add --update openjdk8-jre tzdata curl unzip bash \
-	&& apk add --no-cache nss \
-	&& rm -rf /var/cache/apk/* \
-	&& mkdir -p /tmp/dependencies  \
-	&& curl -L --silent ${JMETER_DOWNLOAD_URL} >  /tmp/dependencies/apache-jmeter-${JMETER_VERSION}.tgz  \
-	&& mkdir -p /opt  \
-	&& tar -xzf /tmp/dependencies/apache-jmeter-${JMETER_VERSION}.tgz -C /opt  \
-	&& rm -rf /tmp/dependencies \
-	&& apk add openssl openrc \
-	&& apk add python3
+def jmeter_test(jmx_file_name):
+    jmx_file_path=jmx_file_directory+jmx_file_name
 
-RUN echo "**** install Python ****" && \
-    apk add --no-cache python3 && \
-    if [ ! -e /usr/bin/python ]; then ln -sf python3 /usr/bin/python ; fi && \
-		\
-    echo "**** install pip ****" && \
-    python3 -m ensurepip && \
-    rm -r /usr/lib/python*/ensurepip && \
-    pip3 install --no-cache --upgrade pip setuptools wheel && \
-		pip3 install flask && \
-		pip3 install subprocess.run && \
-		pip3 install waitress && \
-    if [ ! -e /usr/bin/pip ]; then ln -s pip3 /usr/bin/pip ; fi
+    if os.path.exists(jmx_file_path):
+        subprocess.call(["/docker-jmeter/jmeter-tests.sh", jmx_file_path])
+        subprocess.call(["cp", "-Rf", jmx_reports_path, volume_mount_directory])
 
-# plugins (if required)
-# && unzip -oq "/tmp/dependencies/JMeterPlugins-*.zip" -d $JMETER_HOME
+        return "Report Generated"
+        #sleep(15)
+        #content=get_file('/docker-jmeter/tests/results/index.html')
+        #return Response(content, mimetype="text/html")
+    else:
+        return "JMX file not found"
 
-# Set global PATH such that "jmeter" command is found
-ENV PATH $PATH:$JMETER_BIN
+@app.route('/')
+def initial_route():
+    return "Provide the JMX File name in the url path"
 
-## Copy jmeter test files and execution scripts
 
-RUN mkdir -p /docker-jmeter/tests/results
-RUN mkdir -p /tmp/jmeter-report
+@app.route('/<jmx_filename>')
+def jmx_file_name(jmx_filename):
+    res= jmeter_test(jmx_filename)
+    return res
 
-COPY tests/trivial/*.jmx /docker-jmeter/
-RUN chmod +x /docker-jmeter/*.jmx
-
-COPY jmeter-tests.sh /docker-jmeter/
-COPY jmeter-listener.py /docker-jmeter/
-RUN chmod +x /docker-jmeter/jmeter-tests.sh
-RUN chmod +x /docker-jmeter/jmeter-listener.py
-
-WORKDIR	/docker-jmeter/
-CMD ["./jmeter-listener.py"]
+if __name__ == '__main__':
+    #app.run(debug=True)
+    serve(app, host="0.0.0.0", port=8080)
