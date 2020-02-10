@@ -24,4 +24,11 @@ echo "END Running Jmeter on `date`"
 cp -Rf /docker-jmeter/tests/results/* /var/www/localhost/htdocs/
 
 ## To prevent container from exiting
-ls && /bin/bash
+ls && /bin/# syntax=docker/dockerfile:1.0.0-experimental
+FROM centos AS build
+# install git 
+RUN yum install -y git
+RUN mkdir -m 700 /root/.ssh; \
+  touch -m 600 /root/.ssh/known_hosts; \
+  ssh-keyscan github.com > /root/.ssh/known_hosts
+RUN --mount=type=ssh,id=github git clone git@github.com:jagadish12/simple-java-maven-app.git
